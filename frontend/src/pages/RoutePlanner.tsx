@@ -8,52 +8,42 @@ import { geocodeText } from "@/services/geocodingService";
 const RoutePlanner = () => {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
+
   const [routeData, setRouteData] = useState<any>(null);
   const [backendData, setBackendData] = useState<any>(null);
+  const [selectedRoute, setSelectedRoute] = useState<
+    "fastest" | "safest" | null
+  >(null);
 
   const [tracking, setTracking] = useState(false);
   const [autoCenter, setAutoCenter] = useState(true);
 
+  // -----------------------------
+  // PLAN ROUTE
+  // -----------------------------
   const handlePlanRoute = async () => {
-    if (!origin || !destination) {
-      alert("Please enter both origin and destination");
-      return;
-    }
-
     try {
-      console.log("Calling backend route API...");
-
-      // Convert text → coords
       const originCoords = await geocodeText(origin);
       const destinationCoords = await geocodeText(destination);
 
-      console.log("Origin coords:", originCoords);
-      console.log("Destination coords:", destinationCoords);
+      const data = await getRouteFromBackend(originCoords, destinationCoords);
 
-      // Call backend
-      const result = await getRouteFromBackend(originCoords, destinationCoords);
-      console.log("Backend returned:", result);
+      console.log("BACKEND:", data);
 
-      if (!result || !result.geojson) {
-        alert("Backend returned invalid route");
-        return;
-      }
-
-      // Blue route line
-      setRouteData(result.geojson);
-
-      // Safety panel
+      // Save fastest + safest
       setBackendData({
-        safeScore: result.safeScore,
-        travelTime: result.travelTime,
-        distance: result.distance,
-        warnings: result.warnings || [],
+        fastest: data.fastest,
+        safest: data.safest,
       });
 
-      alert("Route generated successfully!");
+      // default draw safest
+      setSelectedRoute("safest");
+      setRouteData(data.safest.geojson);
+
+      alert("Routes Generated!");
     } catch (err) {
-      console.error("Route error:", err);
-      alert("Route request failed");
+      console.error(err);
+      alert("Route error");
     }
   };
 
@@ -63,14 +53,11 @@ const RoutePlanner = () => {
         <h1 className="text-4xl font-bold mb-8">Plan Your Route</h1>
 
         <div className="grid lg:grid-cols-2 gap-8">
-
-          {/* LEFT SIDE */}
+          {/* LEFT PANEL */}
           <div className="space-y-6">
-
-            {/* Input form */}
+            {/* Input Card */}
             <div className="p-6 bg-white rounded shadow">
               <div className="space-y-4">
-
                 {/* Origin */}
                 <div>
                   <label className="text-sm font-medium mb-2 block">Origin</label>
@@ -87,7 +74,9 @@ const RoutePlanner = () => {
 
                 {/* Destination */}
                 <div>
-                  <label className="text-sm font-medium mb-2 block">Destination</label>
+                  <label className="text-sm font-medium mb-2 block">
+                    Destination
+                  </label>
                   <div className="relative">
                     <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <input
@@ -105,32 +94,66 @@ const RoutePlanner = () => {
                 >
                   Find Route
                 </button>
+
+                {/* Fastest / Safest Buttons */}
+                {backendData && (
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => {
+                        setSelectedRoute("fastest");
+                        setRouteData(backendData.fastest.geojson);
+                      }}
+                      className="px-3 py-2 rounded bg-gray-200"
+                    >
+                      Fastest Route ({backendData.fastest.travelTime} mins)
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setSelectedRoute("safest");
+                        setRouteData(backendData.safest.geojson);
+                      }}
+                      className="px-3 py-2 rounded bg-green-300"
+                    >
+                      Safest Route ({backendData.safest.safeScore}/100)
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* SAFETY PANEL */}
-            {backendData && (
+            {selectedRoute === "safest" && backendData?.safest && (
               <div className="p-4 bg-white rounded shadow border">
-                <h2 className="font-bold text-lg mb-2">Route Safety Analysis</h2>
+                <h2 className="font-bold text-lg">Safest Route</h2>
+                <p>Safe Score: {backendData.safest.safeScore}</p>
+                <p>Distance: {backendData.safest.distance} km</p>
+                <p>Travel Time: {backendData.safest.travelTime} mins</p>
 
-                <p><b>Safe Score:</b> {backendData.safeScore}/100</p>
-                <p><b>Travel Time:</b> {backendData.travelTime} mins</p>
-                <p><b>Distance:</b> {backendData.distance} km</p>
-
-                <h3 className="font-semibold mt-3">Warnings:</h3>
-                <ul className="list-disc ml-6">
-                  {backendData.warnings.map((w: string, i: number) => (
+                <h3 className="mt-2 font-semibold">Warnings:</h3>
+                <ul className="list-disc ml-5">
+                  {backendData.safest.warnings.map((w: string, i: number) => (
                     <li key={i}>{w}</li>
                   ))}
                 </ul>
               </div>
             )}
+
+            {selectedRoute === "fastest" && backendData?.fastest && (
+              <div className="p-4 bg-white rounded shadow border">
+                <h2 className="font-bold text-lg">Fastest Route</h2>
+                <p>Distance: {backendData.fastest.distance} km</p>
+                <p>Travel Time: {backendData.fastest.travelTime} mins</p>
+              </div>
+            )}
           </div>
 
           {/* RIGHT SIDE MAP */}
-          <div className="relative lg:sticky lg:top-24" style={{ height: "80vh" }}>
-
-            {/* TRACKING BUTTONS */}
+          <div
+            className="relative lg:sticky lg:top-24"
+            style={{ height: "80vh" }}
+          >
+            {/* Tracking Controls */}
             <div className="absolute top-4 right-4 z-50 space-y-2">
               <button
                 onClick={() => setTracking((prev) => !prev)}
@@ -147,14 +170,12 @@ const RoutePlanner = () => {
               </button>
             </div>
 
-            {/* MAP */}
             <MapContainer
               enableTracking={tracking}
               autoCenter={autoCenter}
               routeData={routeData}
             />
           </div>
-
         </div>
       </div>
     </div>

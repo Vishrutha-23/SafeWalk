@@ -21,13 +21,11 @@ const MapContainer: React.FC<MapContainerProps> = ({
   const [trafficIncidents, setTrafficIncidents] = useState([]);
   const [crimeZones, setCrimeZones] = useState([]);
 
-  // LIVE USER LOCATION
   useLiveLocation({ mapRef, enableTracking, autoCenter });
 
-
-  /* ---------------------------------------------
-      INITIAL MAP SETUP
-  --------------------------------------------- */
+  // --------------------------
+  // MAP LOAD + ROUTE LAYER
+  // --------------------------
   useEffect(() => {
     if (!mapDivRef.current) return;
 
@@ -43,13 +41,11 @@ const MapContainer: React.FC<MapContainerProps> = ({
     map.on("load", () => {
       console.log("TomTom map fully loaded");
 
-      // Create source for route
       map.addSource("routeSource", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
 
-      // Route Layer
       map.addLayer({
         id: "routeLayer",
         type: "line",
@@ -64,65 +60,69 @@ const MapContainer: React.FC<MapContainerProps> = ({
     return () => map.remove();
   }, []);
 
-
-  /* ---------------------------------------------
-      APPLY ROUTE WHEN routeData CHANGES
-  --------------------------------------------- */
+  // --------------------------
+  // APPLY ROUTE WHEN READY
+  // --------------------------
   useEffect(() => {
     if (!routeData) return;
     const map = mapRef.current;
     if (!map) return;
 
-    const tryApplyRoute = () => {
-      const src = map.getSource("routeSource") as tt.GeoJSONSource;
-
-      if (!src) {
-        console.warn("routeSource not ready yet, retrying…");
-        return setTimeout(tryApplyRoute, 200);
+    const applyRoute = () => {
+      const source = map.getSource("routeSource") as tt.GeoJSONSource;
+      if (!source) {
+        console.warn("routeSource not ready yet, retrying...");
+        setTimeout(applyRoute, 200);
+        return;
       }
 
       console.log("Route applied to map");
-      src.setData(routeData);
+      source.setData(routeData);
     };
 
-    tryApplyRoute();
+    applyRoute();
   }, [routeData]);
 
+  // ----------------------------------------------------
+  // ⭐⭐ PASTE YOUR FETCH INCIDENTS FUNCTION HERE ⭐⭐
+  // ----------------------------------------------------
+// ----------------------------------------------------
+// ⭐ CORRECTED TOMTOM INCIDENTS API FUNCTION ⭐
+// ----------------------------------------------------
+const fetchIncidents = async () => {
+  const key = import.meta.env.VITE_TOMTOM_API_KEY;
 
-  /* ---------------------------------------------
-      FETCH LIVE TRAFFIC INCIDENTS (ONLY ONCE)
-  --------------------------------------------- */
+  const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${key}&bbox=77.3,12.7,77.8,13.2&fields=incidents&language=en-GB`;
+
+  const r = await fetch(url);
+
+  if (!r.ok) {
+    console.error("Traffic API failed", await r.text());
+    return;
+  }
+
+  const data = await r.json();
+
+  const parsed =
+    data.incidents?.map((inc: any) => ({
+      latitude: inc.geometry?.center?.lat,
+      longitude: inc.geometry?.center?.lng,
+      type: inc.properties?.iconCategory ?? "Incident",
+      description: inc.properties?.description ?? "No description",
+    })) || [];
+
+  setTrafficIncidents(parsed);
+};
+
+
+
+  // ----------------------------------------------------
+
+  // CALL INCIDENT API AFTER MAP LOAD
   useEffect(() => {
-    const fetchIncidents = async () => {
-      const key = import.meta.env.VITE_TOMTOM_API_KEY;
-
-      const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${key}&bbox=12.7,77.3,13.2,77.8&fields=type,geometry,properties`;
-
-      try {
-        const r = await fetch(url);
-        const data = await r.json();
-
-        const parsed = data.incidents?.map((inc: any) => ({
-          latitude: inc.geometry?.center?.lat,
-          longitude: inc.geometry?.center?.lng,
-          type: inc.properties?.iconCategory || "Incident",
-          description: inc.properties?.description,
-        }));
-
-        setTrafficIncidents(parsed);
-      } catch (err) {
-        console.error("Traffic incident fetch failed:", err);
-      }
-    };
-
     fetchIncidents();
-  }, []); // IMPORTANT: prevents infinite loop
 
-
-  /* ---------------------------------------------
-      LOAD CRIME ZONES (STATIC)
-  --------------------------------------------- */
-  useEffect(() => {
+    // dummy crime zone
     setCrimeZones([
       {
         name: "High Crime Zone",
@@ -145,17 +145,17 @@ const MapContainer: React.FC<MapContainerProps> = ({
     ]);
   }, []);
 
-
+  // ------------------------------
+  // RENDER MAP + INCIDENT LAYER
+  // ------------------------------
   return (
     <>
-      {/* INCIDENT + CRIME LAYER */}
       <IncidentLayer
         map={mapRef.current}
         trafficIncidents={trafficIncidents}
         crimeZones={crimeZones}
       />
 
-      {/* MAP */}
       <div ref={mapDivRef} className="w-full h-full" />
     </>
   );
