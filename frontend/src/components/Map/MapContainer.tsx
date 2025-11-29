@@ -1,5 +1,5 @@
 // frontend/src/components/Map/MapContainer.tsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import tt from "@tomtom-international/web-sdk-maps";
 import useLiveLocation from "@/hooks/useLiveLocation";
 import IncidentLayer from "./IncidentLayer";
@@ -8,23 +8,40 @@ interface MapContainerProps {
   enableTracking: boolean;
   autoCenter: boolean;
   routeData?: any;
+
+  // Optional overlays (used on Alerts page)
+  incidents?: any[];
+  crimeZones?: any[];
+  hazards?: any[];
+  policeStations?: any[];
+  highlightedIncidentId?: string | null;
+
+  // Optional: allow parent to handle map clicks (returns {lat, lon})
+  onMapClick?: (coords: { lat: number; lon: number }) => void;
+  // Optional: coordinates to render a selected marker (used by ReportIncident)
+  selectedCoords?: { lat: number; lon: number } | null;
 }
 
 const MapContainer: React.FC<MapContainerProps> = ({
   enableTracking,
   autoCenter,
   routeData,
+  incidents = [],
+  crimeZones = [],
+  hazards = [],
+  policeStations = [],
+  highlightedIncidentId = null,
+  onMapClick,
+  selectedCoords = null,
 }) => {
   const mapRef = useRef<tt.Map | null>(null);
   const mapDivRef = useRef<HTMLDivElement | null>(null);
 
-  const [trafficIncidents, setTrafficIncidents] = useState([]);
-  const [crimeZones, setCrimeZones] = useState([]);
-
+  // live location hook (shows user position & tracking)
   useLiveLocation({ mapRef, enableTracking, autoCenter });
 
   // --------------------------
-  // MAP LOAD + ROUTE LAYER
+  // MAP INIT + ROUTE LAYER
   // --------------------------
   useEffect(() => {
     if (!mapDivRef.current) return;
@@ -55,10 +72,65 @@ const MapContainer: React.FC<MapContainerProps> = ({
           "line-width": 6,
         },
       });
+
+      // source + layer for a user-selected point (reporting)
+      map.addSource("selectedPoint", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      map.addLayer({
+        id: "selectedPointLayer",
+        type: "circle",
+        source: "selectedPoint",
+        paint: {
+          "circle-radius": 8,
+          "circle-color": "#ff5500",
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+
+      // click handler to let parent know where user clicked
+      map.on("click", (e: any) => {
+        try {
+          const lngLat = e.lngLat || e.lngLat || (e && e.point) || null;
+          const lat = e.lngLat?.lat;
+          const lon = e.lngLat?.lng;
+          if (lat != null && lon != null && typeof onMapClick === "function") {
+            onMapClick({ lat, lon });
+          }
+        } catch (err) {
+          // ignore
+        }
+      });
     });
 
     return () => map.remove();
   }, []);
+
+  // update selectedPoint source when selectedCoords changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      const source = map.getSource("selectedPoint") as any;
+      if (!source) return;
+      if (selectedCoords && Number.isFinite(selectedCoords.lat) && Number.isFinite(selectedCoords.lon)) {
+        const feature = {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [selectedCoords.lon, selectedCoords.lat] },
+        };
+        source.setData({ type: "FeatureCollection", features: [feature] });
+        // Fly a little to the selected point
+        (map as any).flyTo({ center: [selectedCoords.lon, selectedCoords.lat], zoom: 16, duration: 400 });
+      } else {
+        source.setData({ type: "FeatureCollection", features: [] });
+      }
+    } catch (err) {
+      // ignore until map is ready
+    }
+  }, [selectedCoords]);
 
   // --------------------------
   // APPLY ROUTE WHEN READY
@@ -83,79 +155,47 @@ const MapContainer: React.FC<MapContainerProps> = ({
     applyRoute();
   }, [routeData]);
 
-  // ----------------------------------------------------
-  // ⭐⭐ PASTE YOUR FETCH INCIDENTS FUNCTION HERE ⭐⭐
-  // ----------------------------------------------------
-// ----------------------------------------------------
-// ⭐ CORRECTED TOMTOM INCIDENTS API FUNCTION ⭐
-// ----------------------------------------------------
-const fetchIncidents = async () => {
-  const key = import.meta.env.VITE_TOMTOM_API_KEY;
-
-  const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${key}&bbox=77.3,12.7,77.8,13.2&fields=incidents&language=en-GB`;
-
-  const r = await fetch(url);
-
-  if (!r.ok) {
-    console.error("Traffic API failed", await r.text());
-    return;
-  }
-
-  const data = await r.json();
-
-  const parsed =
-    data.incidents?.map((inc: any) => ({
-      latitude: inc.geometry?.center?.lat,
-      longitude: inc.geometry?.center?.lng,
-      type: inc.properties?.iconCategory ?? "Incident",
-      description: inc.properties?.description ?? "No description",
-    })) || [];
-
-  setTrafficIncidents(parsed);
-};
-
-
-
-  // ----------------------------------------------------
-
-  // CALL INCIDENT API AFTER MAP LOAD
+  // --------------------------
+  // FLY TO HIGHLIGHTED INCIDENT
+  // --------------------------
   useEffect(() => {
-    fetchIncidents();
+    if (!highlightedIncidentId) return;
+    const map = mapRef.current;
+    if (!map) return;
 
-    // dummy crime zone
-    setCrimeZones([
-      {
-        name: "High Crime Zone",
-        geojson: {
-          type: "Feature",
-          geometry: {
-            type: "Polygon",
-            coordinates: [
-              [
-                [77.5805, 12.9752],
-                [77.5835, 12.9752],
-                [77.5835, 12.9785],
-                [77.5805, 12.9785],
-                [77.5805, 12.9752],
-              ],
-            ],
-          },
-        },
-      },
-    ]);
-  }, []);
+    // search incident / hazard / police arrays
+    const allCandidates = [
+      ...(incidents || []),
+      ...(hazards || []),
+      ...(policeStations || []),
+    ];
 
-  // ------------------------------
-  // RENDER MAP + INCIDENT LAYER
-  // ------------------------------
+    const target = allCandidates.find((item: any) => item.id === highlightedIncidentId);
+    if (!target || !target.latitude || !target.longitude) return;
+
+    (map as any).flyTo({
+      center: [target.longitude, target.latitude],
+      zoom: 16,
+      duration: 800,
+    });
+  }, [highlightedIncidentId, incidents, hazards, policeStations]);
+
+  // --------------------------
+  // RENDER
+  // --------------------------
   return (
     <>
+      {/* Overlays (incidents, crime, etc.) */}
       <IncidentLayer
         map={mapRef.current}
-        trafficIncidents={trafficIncidents}
+        incidents={incidents}
         crimeZones={crimeZones}
+        hazards={hazards}
+        policeStations={policeStations}
+        highlightedIncidentId={highlightedIncidentId}
       />
 
+      {/* Actual map container */}
       <div ref={mapDivRef} className="w-full h-full" />
     </>
   );

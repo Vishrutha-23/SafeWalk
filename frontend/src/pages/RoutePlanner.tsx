@@ -4,6 +4,7 @@ import { MapPin, Navigation } from "lucide-react";
 import MapContainer from "@/components/Map/MapContainer";
 import { getRouteFromBackend } from "@/services/routingService";
 import { geocodeText } from "@/services/geocodingService";
+import OnTrip from "@/components/Trip/OnTrip";
 
 const RoutePlanner = () => {
   const [origin, setOrigin] = useState("");
@@ -17,6 +18,9 @@ const RoutePlanner = () => {
 
   const [tracking, setTracking] = useState(false);
   const [autoCenter, setAutoCenter] = useState(true);
+  const [tripActive, setTripActive] = useState(false);
+  const [currentOrigin, setCurrentOrigin] = useState<{ lat: number; lon: number } | null>(null);
+  const [currentDestination, setCurrentDestination] = useState<{ lat: number; lon: number } | null>(null);
 
   // -----------------------------
   // PLAN ROUTE
@@ -25,6 +29,10 @@ const RoutePlanner = () => {
     try {
       const originCoords = await geocodeText(origin);
       const destinationCoords = await geocodeText(destination);
+
+      // store for OnTrip
+      setCurrentOrigin(originCoords);
+      setCurrentDestination(destinationCoords);
 
       const data = await getRouteFromBackend(originCoords, destinationCoords);
 
@@ -136,6 +144,21 @@ const RoutePlanner = () => {
                     <li key={i}>{w}</li>
                   ))}
                 </ul>
+
+                {/* Turn-by-turn instructions for safest route */}
+                {Array.isArray(backendData.safest.instructions) && backendData.safest.instructions.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="font-semibold">Turn‑by‑Turn</h4>
+                    <ol className="list-decimal ml-6 text-sm max-h-40 overflow-y-auto">
+                      {backendData.safest.instructions.map((ins: any, idx: number) => (
+                        <li key={idx} className="mb-1">
+                          <div>{ins.text}</div>
+                          {ins.distance != null && <div className="text-muted-foreground text-xs">{Math.round(ins.distance)} m</div>}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
               </div>
             )}
 
@@ -144,6 +167,21 @@ const RoutePlanner = () => {
                 <h2 className="font-bold text-lg">Fastest Route</h2>
                 <p>Distance: {backendData.fastest.distance} km</p>
                 <p>Travel Time: {backendData.fastest.travelTime} mins</p>
+
+                {/* Turn-by-turn instructions for fastest route */}
+                {Array.isArray(backendData.fastest.instructions) && backendData.fastest.instructions.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="font-semibold">Turn‑by‑Turn</h4>
+                    <ol className="list-decimal ml-6 text-sm max-h-40 overflow-y-auto">
+                      {backendData.fastest.instructions.map((ins: any, idx: number) => (
+                        <li key={idx} className="mb-1">
+                          <div>{ins.text}</div>
+                          {ins.distance != null && <div className="text-muted-foreground text-xs">{Math.round(ins.distance)} m</div>}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -170,16 +208,50 @@ const RoutePlanner = () => {
               </button>
             </div>
 
+            {/* Start Trip control (appears when a route is planned) */}
+            {routeData && currentOrigin && currentDestination && (
+              <div className="absolute top-20 right-4 z-50">
+                {!tripActive ? (
+                  <button
+                    onClick={() => setTripActive(true)}
+                    className="px-3 py-2 bg-green-600 text-white rounded shadow"
+                  >
+                    Start Trip
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setTripActive(false)}
+                    className="px-3 py-2 bg-red-600 text-white rounded shadow"
+                  >
+                    Stop Trip
+                  </button>
+                )}
+              </div>
+            )}
+
             <MapContainer
               enableTracking={tracking}
               autoCenter={autoCenter}
               routeData={routeData}
             />
+
+            {tripActive && currentOrigin && currentDestination && (
+              <OnTrip
+                origin={currentOrigin}
+                destination={currentDestination}
+                routeData={routeData}
+                onReroute={(newGeojson: any) => {
+                  setRouteData(newGeojson);
+                }}
+                onStop={() => setTripActive(false)}
+              />
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 };
+
 
 export default RoutePlanner;

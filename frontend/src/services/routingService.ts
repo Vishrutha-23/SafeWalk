@@ -5,5 +5,10 @@ export async function getRouteFromBackend(origin: any, destination: any) {
     body: JSON.stringify({ origin, destination }),
   });
 
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Route fetch failed: ${res.status}`);
+  }
+
   return await res.json();
 }

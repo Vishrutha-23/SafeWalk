@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { getRouteFromBackend } from "@/services/routingService";
 import { geocodeText } from "@/services/geocodingService";
+import OnTrip from "@/components/Trip/OnTrip";
 
 interface RoutePlannerProps {
   mapRef: any;
@@ -13,6 +14,10 @@ const RoutePlanner: React.FC<RoutePlannerProps> = ({ mapRef }) => {
 
   // ✅ FIX: Place backendData INSIDE the component
   const [backendData, setBackendData] = useState<any>(null);
+  const [tripActive, setTripActive] = useState(false);
+  const [currentRouteGeojson, setCurrentRouteGeojson] = useState<any | null>(null);
+  const [currentOrigin, setCurrentOrigin] = useState<{lat:number, lon:number} | null>(null);
+  const [currentDestination, setCurrentDestination] = useState<{lat:number, lon:number} | null>(null);
 
   const clearRoute = () => {
     const map = mapRef.current;
@@ -39,7 +44,8 @@ const RoutePlanner: React.FC<RoutePlannerProps> = ({ mapRef }) => {
       if (!map) throw new Error("Map not ready");
 
       const center = map.getCenter();
-      const originCoords = { lat: center.lat, lng: center.lng };
+      // Use `lon` to match backend expectation
+      const originCoords = { lat: center.lat, lon: center.lng };
 
       // Convert destination text → coordinates
       const destinationCoords = await geocodeText(destination);
@@ -51,6 +57,9 @@ const RoutePlanner: React.FC<RoutePlannerProps> = ({ mapRef }) => {
 
       // SAVE BACKEND SAFETY PANEL DATA
       setBackendData(result.safety || null);
+      setCurrentRouteGeojson(result.geojson);
+      setCurrentOrigin(originCoords);
+      setCurrentDestination(destinationCoords);
 
       if (!result.geojson) throw new Error("Invalid backend route response");
 
@@ -126,6 +135,59 @@ const RoutePlanner: React.FC<RoutePlannerProps> = ({ mapRef }) => {
           Clear
         </button>
       </div>
+      {/* Start Trip button appears after a route has been planned */}
+      {currentRouteGeojson && currentOrigin && currentDestination && (
+        <div className="mt-3">
+          {!tripActive ? (
+            <button
+              onClick={() => setTripActive(true)}
+              className="px-3 py-2 bg-green-600 text-white rounded"
+            >
+              Start Trip
+            </button>
+          ) : (
+            <button
+              onClick={() => setTripActive(false)}
+              className="px-3 py-2 bg-red-600 text-white rounded"
+            >
+              Stop Trip
+            </button>
+          )}
+        </div>
+      )}
+
+      {tripActive && currentOrigin && currentDestination && currentRouteGeojson && (
+        <OnTrip
+          origin={currentOrigin}
+          destination={currentDestination}
+          routeData={currentRouteGeojson}
+          mapRef={mapRef}
+          onReroute={(newGeojson: any) => {
+            try {
+              // replace route on map
+              clearRoute();
+              const map = mapRef.current;
+              if (map) {
+                map.addSource("sw-route-source", { type: "geojson", data: newGeojson });
+                map.addLayer({
+                  id: "sw-route-layer",
+                  type: "line",
+                  source: "sw-route-source",
+                  paint: { "line-color": "#007aff", "line-width": 5 },
+                });
+                const coords = newGeojson.geometry.coordinates;
+                const bounds = new window.tt.LngLatBounds(coords[0], coords[0]);
+                coords.forEach((c: any) => bounds.extend(c));
+                map.fitBounds(bounds, { padding: 50, duration: 600 });
+              }
+              setCurrentRouteGeojson(newGeojson);
+            } catch (e) {
+              console.error("Apply reroute failed", e);
+            }
+          }}
+          onStop={() => setTripActive(false)}
+        />
+      )}
     </div>
   );
 };

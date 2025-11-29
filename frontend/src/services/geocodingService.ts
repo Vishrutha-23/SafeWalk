@@ -14,8 +14,9 @@ export const geocodeText = async (query: string) => {
 
   const pos = data.results[0].position;
 
+  // Return `lon` (not `lng`) so it matches backend naming (`origin.lon`)
   return {
     lat: pos.lat,
-    lng: pos.lon,
+    lon: pos.lon,
   };
 };

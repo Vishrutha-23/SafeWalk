@@ -1,0 +1,7 @@
+
+> backend@1.0.0 start
+> node server.js
+
+[dotenv@17.2.3] injecting env (2) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+🚀 Backend running on http://localhost:3000
+stdout is not a tty

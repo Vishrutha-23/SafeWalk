@@ -34,7 +34,7 @@ const useLiveLocation = ({ mapRef, enableTracking, autoCenter }: UseLiveLocation
     lat: pos.coords.latitude,
     lng: pos.coords.longitude,
     accuracy: pos.coords.accuracy,
-    heading: pos.coords.heading ?? null,
+    heading: pos.coords.heading ?? 0,
 };
 if (
   coords.lat === null ||

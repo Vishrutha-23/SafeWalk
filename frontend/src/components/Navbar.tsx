@@ -8,7 +8,7 @@ const Navbar = () => {
   const location = useLocation();
 
   const navItems = [
-    { path: "/", label: "Dashboard" },
+    { path: "/dashboard", label: "Dashboard" },
     { path: "/route-planner", label: "Plan Route" },
     { path: "/alerts", label: "Alerts" },
     { path: "/report", label: "Report" },
@@ -21,7 +21,7 @@ const Navbar = () => {
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 font-semibold text-xl">
+          <Link to="/dashboard" className="flex items-center gap-2 font-semibold text-xl">
             <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-lg">
               <Shield className="w-6 h-6 text-white" />
             </div>

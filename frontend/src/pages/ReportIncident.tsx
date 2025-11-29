@@ -13,12 +13,15 @@ import {
 } from "@/components/ui/select";
 import MapContainer from "@/components/Map/MapContainer";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
 
 const ReportIncident = () => {
   const { toast } = useToast();
+  const { isGuest } = useAuth();
   const [category, setCategory] = useState("");
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
+  const [selectedCoords, setSelectedCoords] = useState<{ lat: number; lon: number } | null>(null);
 
   const categories = [
     { value: "theft", label: "Theft" },
@@ -31,14 +34,46 @@ const ReportIncident = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement Supabase submission
-    toast({
-      title: "Report Submitted",
-      description: "Thank you for helping keep the community safe.",
-    });
-    setCategory("");
-    setLocation("");
-    setDescription("");
+    (async () => {
+      try {
+        if (isGuest) {
+          toast({ title: "Sign in required", description: "Please sign in to report incidents." });
+          return;
+        }
+        if (!selectedCoords) {
+          toast({ title: "Select Location", description: "Please click on the map to set the incident location." });
+          return;
+        }
+
+        const payload = {
+          category,
+          description,
+          latitude: selectedCoords.lat,
+          longitude: selectedCoords.lon,
+        };
+
+        const backend = import.meta.env.VITE_BACKEND_URL || "http://localhost:3000";
+        const resp = await fetch(`${backend}/incidents/report`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to submit report");
+        }
+
+        toast({ title: "Report Submitted", description: "Thank you — incident added to alerts." });
+        setCategory("");
+        setLocation("");
+        setDescription("");
+        setSelectedCoords(null);
+      } catch (err: any) {
+        console.error("Report submit error", err);
+        toast({ title: "Submission failed", description: err?.message || String(err) });
+      }
+    })();
   };
 
   return (
@@ -117,7 +152,7 @@ const ReportIncident = () => {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full gradient-primary" size="lg">
+              <Button type="submit" className="w-full gradient-primary" size="lg" disabled={isGuest}>
                 <Send className="w-5 h-5 mr-2" />
                 Submit Report
               </Button>
@@ -126,15 +161,24 @@ const ReportIncident = () => {
 
           {/* Map */}
           <div className="lg:sticky lg:top-24 h-[600px]">
-            <MapContainer>
-              <div className="absolute top-4 left-4 right-4">
+            <div className="relative h-full">
+              <MapContainer
+                enableTracking={false}
+                autoCenter={false}
+                onMapClick={(c) => {
+                  setSelectedCoords(c);
+                  setLocation(`${c.lat.toFixed(5)}, ${c.lon.toFixed(5)}`);
+                }}
+                selectedCoords={selectedCoords}
+              />
+              <div className="absolute top-4 left-4 right-4 pointer-events-none">
                 <Card className="glass p-3">
                   <p className="text-sm text-muted-foreground">
                     Click on the map to set incident location
                   </p>
                 </Card>
               </div>
-            </MapContainer>
+            </div>
           </div>
         </div>
       </div>
